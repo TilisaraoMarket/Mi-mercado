@@ -19,7 +19,6 @@ from flask_pymongo import PyMongo
 from dotenv import load_dotenv
 from whitenoise import WhiteNoise
 from werkzeug.middleware.proxy_fix import ProxyFix
-from functools import wraps
 
 # Configurar logging
 logging.basicConfig(
@@ -54,6 +53,16 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', config['app']['secret_key'])
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = config['database'].get('track_modifications', False)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.getenv('SESSION_LIFETIME_DAYS', config['app']['session_lifetime_days'])))
 app.config['STATIC_FOLDER'] = 'static'
+
+# Configuración de seguridad para sesiones
+app.config.update(
+    SESSION_COOKIE_SECURE=os.getenv('FLASK_ENV') != 'development',
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='None' if os.getenv('FLASK_ENV') != 'development' else None,
+    REMEMBER_COOKIE_SECURE=os.getenv('FLASK_ENV') != 'development',
+    REMEMBER_COOKIE_HTTPONLY=True,
+    REMEMBER_COOKIE_SAMESITE='None' if os.getenv('FLASK_ENV') != 'development' else None
+)
 
 # Configurar ProxyFix para manejar correctamente los headers en producción
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -95,10 +104,21 @@ try:
 except Exception as e:
     logger.error(f"Error al configurar o conectar con MongoDB: {str(e)}")
     # MongoDB no estará disponible, pero la aplicación seguirá funcionando con SQLAlchemy
-# Update CORS configuration
+# Configuración de CORS actualizada
 CORS(app, 
      supports_credentials=True,
-     resources={r"/*": {"origins": "*"}})
+     resources={r"/*": {
+         "origins": [
+             "https://mimercado.onrender.com", 
+             "https://www.mimercado.com", 
+             "http://localhost:3000",
+             "http://localhost:5000"
+         ],
+         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         "allow_headers": ["Content-Type", "Authorization"],
+         "expose_headers": ["Content-Range", "X-Content-Range"],
+         "supports_credentials": True
+     }})
 
 # Configurar WhiteNoise para servir archivos estáticos eficientemente
 app.wsgi_app = WhiteNoise(
@@ -453,15 +473,6 @@ def recreate_db():
 # Recrear la base de datos al arrancar
 recreate_db()
 
-# Decorador para rutas que requieren autenticación
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return jsonify({'error': 'Unauthorized', 'message': 'Debe iniciar sesión'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
 # Rutas para servir archivos estáticos
 @app.route('/api/health')
 def health_check():
@@ -529,20 +540,20 @@ def catch_all(path):
 # Rutas de la API
 @app.route('/api/login', methods=['POST'])
 def login():
-    logger.info("Iniciando proceso de login")
+    print("Recibiendo solicitud de login")  # Debug
     data = request.get_json()
     
     if not data:
-        logger.error("No se recibieron datos en el login")
+        print("No se recibieron datos")  # Debug
         return jsonify({'error': 'No se recibieron datos'}), 400
         
     email = data.get('email')
     password = data.get('password')
 
-    logger.info(f"Intento de login para email: {email}")
+    print(f"Intentando login con email: {email}")  # Debug
 
     if not email or not password:
-        logger.error("Falta email o contraseña")
+        print("Falta email o contraseña")  # Debug
         return jsonify({'error': 'Falta email o contraseña'}), 400
 
     try:
@@ -550,27 +561,14 @@ def login():
         if usuario and usuario.check_password(password):
             session['user_id'] = usuario.id
             session.permanent = True  # La sesión durará más tiempo
-            logger.info(f"Login exitoso para usuario: {email}")
-            
-            # Log del estado de la sesión
-            logger.info(f"Session ID: {request.cookies.get('session', 'No session cookie')}")
-            logger.info(f"Session data: {dict(session)}")
-            
-            return jsonify({
-                'success': True, 
-                'message': 'Login exitoso',
-                'user': {
-                    'id': usuario.id,
-                    'email': usuario.email,
-                    'nombre': usuario.nombre
-                }
-            })
+            print(f"Login exitoso para usuario: {email}")  # Debug
+            return jsonify({'success': True, 'message': 'Login exitoso'})
         
-        logger.error(f"Credenciales incorrectas para usuario: {email}")
+        print("Credenciales incorrectas")  # Debug
         return jsonify({'error': 'Credenciales incorrectas'}), 401
         
     except Exception as e:
-        logger.error(f"Error en login: {str(e)}")
+        print(f"Error en login: {str(e)}")  # Debug
         return jsonify({'error': 'Error al procesar el login'}), 500
 
 
@@ -631,12 +629,10 @@ def obtener_productos():
             'precio': p.precio,
             'imagen_url': p.imagen_url,
             'stock': p.stock,
-            'vendedor_id': p.vendedor_id,
-            'calificacion': p.calificacion_promedio(),
-            'num_reviews': p.cantidad_reviews()
+            'vendedor_id': p.vendedor_id
         } for p in productos])
     except Exception as e:
-        logger.error(f'Error al obtener productos: {str(e)}')
+        print('Error al obtener productos:', str(e))
         return jsonify({'error': 'Error al obtener productos'}), 500
 
 @app.route('/api/productos/buscar')
@@ -661,11 +657,10 @@ def buscar_productos():
             'imagen_url': p.imagen_url,
             'stock': p.stock,
             'vendedor_id': p.vendedor_id,
-            'calificacion': p.calificacion_promedio(),
-            'num_reviews': p.cantidad_reviews()
+            'fecha_creacion': p.fecha_creacion.isoformat()
         } for p in productos])
     except Exception as e:
-        logger.error(f'Error en búsqueda de productos: {str(e)}')
+        print('Error en búsqueda:', str(e))
         return jsonify({'error': 'Error al buscar productos'}), 500
 
 @app.route('/api/productos/<int:producto_id>', methods=['GET'])
@@ -679,17 +674,17 @@ def obtener_producto(producto_id):
             'precio': producto.precio,
             'imagen_url': producto.imagen_url,
             'stock': producto.stock,
-            'vendedor_id': producto.vendedor_id,
-            'calificacion': producto.calificacion_promedio(),
-            'num_reviews': producto.cantidad_reviews()
+            'vendedor_id': producto.vendedor_id
         })
     except Exception as e:
-        logger.error(f'Error al obtener producto {producto_id}: {str(e)}')
+        print('Error al obtener producto:', str(e))
         return jsonify({'error': 'Error al obtener producto'}), 500
 
 @app.route('/api/carrito', methods=['GET'])
-@login_required
 def obtener_carrito():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
+    
     try:
         items = CarritoItem.query.filter_by(usuario_id=session['user_id']).all()
         carrito = []
@@ -710,8 +705,9 @@ def obtener_carrito():
         return jsonify({'error': 'Error al obtener el carrito'}), 500
 
 @app.route('/api/carrito/agregar', methods=['POST'])
-@login_required
 def agregar_al_carrito():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
     
     data = request.get_json()
     if not data or 'producto_id' not in data:
@@ -764,8 +760,9 @@ def agregar_al_carrito():
         return jsonify({'error': 'Error al agregar al carrito'}), 500
 
 @app.route('/api/carrito/eliminar/<int:item_id>', methods=['DELETE'])
-@login_required
 def eliminar_del_carrito(item_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
     
     try:
         item = CarritoItem.query.filter_by(
@@ -793,12 +790,16 @@ def eliminar_del_carrito(item_id):
         return jsonify({'error': 'Error al eliminar del carrito'}), 500
 
 @app.route('/api/carrito/vaciar', methods=['DELETE'])
-@login_required
 def vaciar_carrito():
     try:
         # Imprimir información de depuración
         print('Intentando vaciar carrito...')
         print(f'Sesión actual: {session}')
+        
+        # Verificar si el usuario está autenticado
+        if 'user_id' not in session:
+            print('Error: No hay sesión de usuario')
+            return jsonify({'error': 'No autorizado', 'details': 'No hay sesión activa'}), 401
 
         # Obtener el ID de usuario de la sesión
         usuario_id = session['user_id']
@@ -836,8 +837,9 @@ def vaciar_carrito():
         }), 500
 
 @app.route('/api/checkout', methods=['POST'])
-@login_required
 def checkout():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
     
     try:
         # Obtener items del carrito
@@ -895,8 +897,9 @@ def checkout():
         return jsonify({'error': 'Error al procesar la orden'}), 500
 
 @app.route('/api/ordenes', methods=['GET'])
-@login_required
 def obtener_ordenes():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
     
     try:
         ordenes = Orden.query.filter_by(usuario_id=session['user_id']).order_by(Orden.fecha_creacion.desc()).all()
@@ -911,8 +914,9 @@ def obtener_ordenes():
         return jsonify({'error': 'Error al obtener órdenes'}), 500
 
 @app.route('/api/ordenes', methods=['POST'])
-@login_required
 def crear_orden():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         data = request.get_json()
@@ -967,8 +971,9 @@ def crear_orden():
         return jsonify({'error': 'Error al crear la orden'}), 500
 
 @app.route('/api/ordenes/<int:orden_id>', methods=['GET'])
-@login_required
 def obtener_orden(orden_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         orden = Orden.query.get(orden_id)
@@ -999,8 +1004,9 @@ def obtener_orden(orden_id):
         return jsonify({'error': 'Error al obtener la orden'}), 500
 
 @app.route('/api/perfil', methods=['GET'])
-@login_required
 def obtener_perfil():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
     
     try:
         usuario = Usuario.query.get(session['user_id'])
@@ -1021,8 +1027,9 @@ def obtener_perfil():
         return jsonify({'error': 'Error al obtener perfil'}), 500
 
 @app.route('/api/perfil', methods=['PUT'])
-@login_required
 def actualizar_perfil():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
     
     try:
         usuario = Usuario.query.get(session['user_id'])
@@ -1055,8 +1062,9 @@ def actualizar_perfil():
         return jsonify({'error': 'Error al actualizar perfil'}), 500
 
 @app.route('/api/cambiar-password', methods=['POST'])
-@login_required
 def cambiar_password():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
     
     try:
         usuario = Usuario.query.get(session['user_id'])
@@ -1088,8 +1096,9 @@ def logout():
 
 # Rutas para pagos y facturación
 @app.route('/api/pagos/crear-intento', methods=['POST'])
-@login_required
 def crear_intento_pago():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         data = request.get_json()
@@ -1222,8 +1231,9 @@ def generar_factura(pago):
         raise
 
 @app.route('/api/facturas/<int:factura_id>', methods=['GET'])
-@login_required
 def obtener_factura(factura_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         factura = Factura.query.get(factura_id)
@@ -1250,8 +1260,9 @@ def obtener_factura(factura_id):
         return jsonify({'error': 'Error al obtener factura'}), 500
 
 @app.route('/api/pagos/<int:pago_id>', methods=['GET'])
-@login_required
 def obtener_pago(pago_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         pago = Pago.query.get(pago_id)
@@ -1276,8 +1287,9 @@ def obtener_pago(pago_id):
         return jsonify({'error': 'Error al obtener pago'}), 500
 
 @app.route('/api/facturas/<int:pago_id>/descargar', methods=['GET'])
-@login_required
 def descargar_factura(pago_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         # Buscar la factura asociada al pago
@@ -1430,8 +1442,9 @@ def allowed_file(filename):
 
 # Rutas para gestión de direcciones de envío
 @app.route('/api/direcciones', methods=['GET'])
-@login_required
 def obtener_direcciones():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         direcciones = DireccionEnvio.query.filter_by(usuario_id=session['user_id']).all()
@@ -1452,8 +1465,9 @@ def obtener_direcciones():
         return jsonify({'error': 'Error al obtener direcciones'}), 500
 
 @app.route('/api/direcciones', methods=['POST'])
-@login_required
 def crear_direccion():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         data = request.get_json()
@@ -1492,8 +1506,9 @@ def crear_direccion():
 
 # Rutas para gestión de productos (vendedores)
 @app.route('/api/productos/<int:producto_id>', methods=['PUT'])
-@login_required
 def editar_producto(producto_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         producto = Producto.query.get(producto_id)
@@ -1522,8 +1537,9 @@ def editar_producto(producto_id):
         return jsonify({'error': 'Error al actualizar producto'}), 500
 
 @app.route('/api/productos/<int:producto_id>', methods=['DELETE'])
-@login_required
 def eliminar_producto(producto_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         producto = Producto.query.get(producto_id)
@@ -1562,8 +1578,9 @@ def obtener_reviews(producto_id):
         return jsonify({'error': 'Error al obtener reviews'}), 500
 
 @app.route('/api/productos/<int:producto_id>/reviews', methods=['POST'])
-@login_required
 def crear_review(producto_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Debe iniciar sesión'}), 401
 
     try:
         # Verificar si el usuario ya ha dejado una review
