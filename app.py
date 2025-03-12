@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify, session, send_from_directory, make_re
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
+import logging
 from flask_cors import CORS
 from datetime import timedelta, datetime
 from enum import Enum
@@ -16,6 +17,13 @@ from werkzeug.utils import secure_filename
 from sqlalchemy.orm import validates
 from flask_pymongo import PyMongo
 from dotenv import load_dotenv
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Cargar variables de entorno
 load_dotenv()
@@ -45,17 +53,44 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.getenv('SESSION
 
 # Configurar DATABASE_URL para PostgreSQL en Render
 database_url = os.getenv('DATABASE_URL')
-if database_url and database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url or config['database']['uri']
+if database_url:
+    # Handle Render's Postgres URL format
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = config['database']['uri']
 
-# Configuración de MongoDB
-app.config["MONGO_URI"] = os.getenv("MONGODB_URI") or config['database'].get('mongo_uri')
+# Configuración de MongoDB con manejo de errores
+try:
+    mongodb_uri = os.environ.get('MONGODB_URI', config['database'].get('mongo_uri'))
+    if not mongodb_uri:
+        logger.warning("MONGODB_URI no está configurado. Usando URI por defecto.")
+        mongodb_uri = 'mongodb://localhost:27017/mimercado'
+    
+    logger.info(f"Configurando MongoDB con URI: {mongodb_uri.split('@')[-1]}")  # Log solo la parte después de @ por seguridad
+    app.config["MONGO_URI"] = mongodb_uri
+    
+    # Inicializar extensiones
+    db = SQLAlchemy(app)
+    mongo = PyMongo(app)
+    
+    # Verificar conexión a MongoDB
+    mongo.db.command('ping')
+    logger.info(f"Conexión a MongoDB establecida correctamente. Base de datos: {mongo.db.name}")
+except Exception as e:
+    logger.error(f"Error al configurar o conectar con MongoDB: {str(e)}")
+    # Inicializar SQLAlchemy de todos modos para que la aplicación pueda funcionar parcialmente
+    db = SQLAlchemy(app)
+    mongo = None
+# Update static file handling
+app.static_folder = 'static'
+app.static_url_path = '/static'
 
-# Inicializar extensiones
-db = SQLAlchemy(app)
-mongo = PyMongo(app)
-CORS(app, supports_credentials=True)  # Permitir credenciales en las peticiones CORS
+# Update CORS configuration
+CORS(app, 
+     supports_credentials=True,
+     resources={r"/*": {"origins": "*"}})
 
 # Configuración de Stripe
 app.config['STRIPE_PUBLIC_KEY'] = os.getenv('STRIPE_PUBLIC_KEY', 'pk_test_your_key')
@@ -69,6 +104,10 @@ class EstadoPago(Enum):
     REEMBOLSADO = 'reembolsado'
 # Function to insert payment statuses into MongoDB
 def insert_payment_statuses():
+    if mongo is None:
+        logger.error("No se pueden insertar estados de pago: MongoDB no está disponible")
+        return
+        
     try:
         # Define the payment statuses
         payment_statuses = [
@@ -78,30 +117,75 @@ def insert_payment_statuses():
             {"status": EstadoPago.REEMBOLSADO.value}
         ]
         
+        # Check if collection exists and has data
+        existing_statuses = mongo.db.estados_pago.find_one()
+        if existing_statuses:
+            logger.info("Los estados de pago ya existen en MongoDB")
+            return
+            
         # Insert the payment statuses into the 'estados_pago' collection
-        mongo.db.estados_pago.insert_many(payment_statuses)
-        print("Payment statuses inserted into MongoDB")
+        result = mongo.db.estados_pago.insert_many(payment_statuses)
+        logger.info(f"Estados de pago insertados en MongoDB: {len(result.inserted_ids)} documentos")
     except Exception as e:
-        print(f"Error inserting payment statuses: {e}")
+        logger.error(f"Error al insertar estados de pago en MongoDB: {str(e)}")
 
 # Example route to trigger the insertion
 @app.route('/insert-payment-statuses')
 def insert_statuses_route():
-    insert_payment_statuses()
-    return "Payment statuses inserted into MongoDB!"
+    try:
+        if mongo is None:
+            logger.error("No se pueden insertar estados de pago: MongoDB no está disponible")
+            return jsonify({
+                "status": "error",
+                "message": "MongoDB no está disponible"
+            }), 500
+            
+        insert_payment_statuses()
+        logger.info("Estados de pago insertados manualmente a través de la ruta API")
+        return jsonify({
+            "status": "success",
+            "message": "Estados de pago insertados en MongoDB correctamente"
+        })
+    except Exception as e:
+        logger.error(f"Error al insertar estados de pago desde la ruta API: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 @app.route('/test-mongodb')
 def test_mongodb():
     try:
+        if mongo is None:
+            logger.error("La conexión a MongoDB no está disponible")
+            return jsonify({
+                "status": "error",
+                "message": "La conexión a MongoDB no está disponible"
+            }), 500
+            
         # Intenta una operación simple
         mongo.db.command('ping')
+        logger.info("Prueba de conexión a MongoDB exitosa")
+        
+        # Obtener información de la base de datos
+        db_stats = mongo.db.command('dbStats')
+        collections = mongo.db.list_collection_names()
+        
+        logger.info(f"MongoDB stats: {db_stats.get('collections')} colecciones, {db_stats.get('objects')} objetos")
+        
         return jsonify({
             "status": "success", 
             "message": "Conectado a MongoDB exitosamente",
             "database": mongo.db.name,
-            "collections": mongo.db.list_collection_names()
+            "collections": collections,
+            "stats": {
+                "collections": db_stats.get('collections', 0),
+                "objects": db_stats.get('objects', 0),
+                "dataSize": db_stats.get('dataSize', 0)
+            }
         })
     except Exception as e:
+        logger.error(f"Error al probar la conexión a MongoDB: {str(e)}")
         return jsonify({
             "status": "error", 
             "message": str(e)
@@ -353,14 +437,49 @@ recreate_db()
 # Rutas para servir archivos estáticos
 @app.route('/api/health')
 def health_check():
+    db_status = "connected"
+    mongo_status = "connected"
+    mongo_details = {}
+    
+    # Verificar estado de MongoDB
+    if mongo is not None:
+        try:
+            mongo.db.command('ping')
+            mongo_details = {
+                "database_name": mongo.db.name,
+                "collections": len(mongo.db.list_collection_names())
+            }
+        except Exception as e:
+            mongo_status = "error"
+            mongo_details = {"error": str(e)}
+            logger.error(f"Error de conexión a MongoDB en health check: {str(e)}")
+    else:
+        mongo_status = "unavailable"
+    
+    # Verificar estado de SQL
+    try:
+        db.session.execute("SELECT 1")
+    except Exception as e:
+        db_status = "error"
+        logger.error(f"Error de conexión a SQL en health check: {str(e)}")
+    
     return jsonify({
         'status': 'healthy',
-        'message': 'Mi Mercado API is running'
+        'message': 'Mi Mercado API is running',
+        'databases': {
+            'sql': db_status,
+            'mongodb': mongo_status,
+            'mongodb_details': mongo_details
+        }
     })
+
+@app.route('/health')
+def simple_health_check():
+    return 'OK', 200
 
 @app.route('/')
 def root():
-    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+    return 'Mi Mercado API está funcionando!'
 
 @app.route('/<path:filename>')
 def serve_static(filename):
@@ -1476,9 +1595,28 @@ def handle_500_error(error):
         'message': str(error)
     }), 500
 
+# Inicializar MongoDB con datos necesarios al arrancar
+with app.app_context():
+    if mongo is not None:
+        try:
+            # Verificar conexión a MongoDB
+            mongo.db.command('ping')
+            logger.info("Verificación de conexión a MongoDB exitosa")
+            
+            # Insertar estados de pago si no existen
+            insert_payment_statuses()
+            
+            # Listar colecciones disponibles
+            collections = mongo.db.list_collection_names()
+            logger.info(f"Colecciones disponibles en MongoDB: {collections}")
+        except Exception as e:
+            logger.error(f"Error de inicialización de MongoDB: {str(e)}")
+    else:
+        logger.warning("MongoDB no está disponible. La aplicación funcionará con funcionalidad limitada.")
+
 if __name__ == '__main__':
     # Ejecutar el servidor
-    port = int(os.environ.get('PORT', 5001))
+    port = int(os.environ.get('PORT', 5000))
     if os.environ.get('FLASK_ENV') == 'development':
         app.run(host='0.0.0.0', port=port, debug=True)
     else:
