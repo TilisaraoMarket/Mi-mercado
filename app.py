@@ -61,18 +61,25 @@ if database_url:
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = config['database']['uri']
 
+# Inicializar SQLAlchemy primero para que esté disponible independientemente de MongoDB
+db = SQLAlchemy(app)
+
 # Configuración de MongoDB con manejo de errores
+mongo = None
 try:
     mongodb_uri = os.environ.get('MONGODB_URI', config['database'].get('mongo_uri'))
     if not mongodb_uri:
         logger.warning("MONGODB_URI no está configurado. Usando URI por defecto.")
         mongodb_uri = 'mongodb://localhost:27017/mimercado'
     
+    # Validar formato de URI de MongoDB
+    if not (mongodb_uri.startswith('mongodb://') or mongodb_uri.startswith('mongodb+srv://')):
+        raise ValueError("Formato de URI de MongoDB inválido. Debe comenzar con 'mongodb://' o 'mongodb+srv://'")
+    
     logger.info(f"Configurando MongoDB con URI: {mongodb_uri.split('@')[-1]}")  # Log solo la parte después de @ por seguridad
     app.config["MONGO_URI"] = mongodb_uri
     
-    # Inicializar extensiones
-    db = SQLAlchemy(app)
+    # Inicializar MongoDB
     mongo = PyMongo(app)
     
     # Verificar conexión a MongoDB
@@ -80,9 +87,7 @@ try:
     logger.info(f"Conexión a MongoDB establecida correctamente. Base de datos: {mongo.db.name}")
 except Exception as e:
     logger.error(f"Error al configurar o conectar con MongoDB: {str(e)}")
-    # Inicializar SQLAlchemy de todos modos para que la aplicación pueda funcionar parcialmente
-    db = SQLAlchemy(app)
-    mongo = None
+    # MongoDB no estará disponible, pero la aplicación seguirá funcionando con SQLAlchemy
 # Update static file handling
 app.static_folder = 'static'
 app.static_url_path = '/static'
@@ -160,7 +165,8 @@ def test_mongodb():
             logger.error("La conexión a MongoDB no está disponible")
             return jsonify({
                 "status": "error",
-                "message": "La conexión a MongoDB no está disponible"
+                "message": "La conexión a MongoDB no está disponible",
+                "details": "MongoDB no está configurado o no se pudo establecer la conexión"
             }), 500
             
         # Intenta una operación simple
@@ -188,7 +194,8 @@ def test_mongodb():
         logger.error(f"Error al probar la conexión a MongoDB: {str(e)}")
         return jsonify({
             "status": "error", 
-            "message": str(e)
+            "message": "Error al conectar con MongoDB",
+            "details": str(e)
         }), 500
 
 class MetodoPago(Enum):
@@ -455,6 +462,7 @@ def health_check():
             logger.error(f"Error de conexión a MongoDB en health check: {str(e)}")
     else:
         mongo_status = "unavailable"
+        mongo_details = {"reason": "MongoDB no está configurado o no se pudo establecer la conexión inicial"}
     
     # Verificar estado de SQL
     try:
@@ -463,13 +471,23 @@ def health_check():
         db_status = "error"
         logger.error(f"Error de conexión a SQL en health check: {str(e)}")
     
+    # Determinar el estado general de la aplicación
+    overall_status = "healthy" if db_status == "connected" else "degraded"
+    
     return jsonify({
-        'status': 'healthy',
-        'message': 'Mi Mercado API is running',
+        'status': overall_status,
+        'message': 'Mi Mercado API is running' if overall_status == "healthy" else "Mi Mercado API is running with limited functionality",
+        'timestamp': datetime.now().isoformat(),
         'databases': {
-            'sql': db_status,
-            'mongodb': mongo_status,
-            'mongodb_details': mongo_details
+            'sql': {
+                'status': db_status,
+                'required': True
+            },
+            'mongodb': {
+                'status': mongo_status,
+                'required': False,
+                'details': mongo_details
+            }
         }
     })
 
@@ -1611,6 +1629,8 @@ with app.app_context():
             logger.info(f"Colecciones disponibles en MongoDB: {collections}")
         except Exception as e:
             logger.error(f"Error de inicialización de MongoDB: {str(e)}")
+            # Marcar MongoDB como no disponible si hay error durante la inicialización
+            mongo = None
     else:
         logger.warning("MongoDB no está disponible. La aplicación funcionará con funcionalidad limitada.")
 
