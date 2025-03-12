@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instrucciones de Transferencia</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <style>
+        .bank-info {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .copy-button {
+            cursor: pointer;
+        }
+        .copy-button:hover {
+            color: #0d6efd;
+        }
+        .copied-tooltip {
+            display: none;
+            position: absolute;
+            background-color: #28a745;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <h2 class="text-center mb-4">Instrucciones de Transferencia</h2>
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle-fill"></i>
+                    Por favor, realiza la transferencia con los siguientes datos y luego envía el comprobante.
+                </div>
+
+                <div class="bank-info">
+                    <h5>Datos Bancarios</h5>
+                    <div class="mt-4">
+                        <div class="row mb-3">
+                            <div class="col-4">
+                                <strong>Banco:</strong>
+                            </div>
+                            <div class="col-8 d-flex align-items-center">
+                                <span id="banco">Banco Ejemplo</span>
+                                <i class="bi bi-clipboard ms-2 copy-button" onclick="copiarTexto('banco')"></i>
+                                <span class="copied-tooltip ms-2">¡Copiado!</span>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-4">
+                                <strong>Tipo de Cuenta:</strong>
+                            </div>
+                            <div class="col-8">
+                                Cuenta Corriente
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-4">
+                                <strong>CBU:</strong>
+                            </div>
+                            <div class="col-8 d-flex align-items-center">
+                                <span id="cbu">0000000000000000000000</span>
+                                <i class="bi bi-clipboard ms-2 copy-button" onclick="copiarTexto('cbu')"></i>
+                                <span class="copied-tooltip ms-2">¡Copiado!</span>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-4">
+                                <strong>Alias:</strong>
+                            </div>
+                            <div class="col-8 d-flex align-items-center">
+                                <span id="alias">MI.MERCADO.EJEMPLO</span>
+                                <i class="bi bi-clipboard ms-2 copy-button" onclick="copiarTexto('alias')"></i>
+                                <span class="copied-tooltip ms-2">¡Copiado!</span>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-4">
+                                <strong>CUIT:</strong>
+                            </div>
+                            <div class="col-8 d-flex align-items-center">
+                                <span id="cuit">30-12345678-9</span>
+                                <i class="bi bi-clipboard ms-2 copy-button" onclick="copiarTexto('cuit')"></i>
+                                <span class="copied-tooltip ms-2">¡Copiado!</span>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-4">
+                                <strong>Monto:</strong>
+                            </div>
+                            <div class="col-8 d-flex align-items-center">
+                                <span id="monto">$0.00</span>
+                                <i class="bi bi-clipboard ms-2 copy-button" onclick="copiarTexto('monto')"></i>
+                                <span class="copied-tooltip ms-2">¡Copiado!</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h5>Pasos a seguir:</h5>
+                    <ol class="list-group list-group-numbered mt-3">
+                        <li class="list-group-item">Realiza la transferencia utilizando los datos proporcionados arriba</li>
+                        <li class="list-group-item">Guarda el comprobante de la transferencia</li>
+                        <li class="list-group-item">Envía el comprobante a través del siguiente formulario</li>
+                    </ol>
+                </div>
+
+                <div class="mt-4">
+                    <form id="comprobante-form">
+                        <div class="mb-3">
+                            <label for="comprobante" class="form-label">Comprobante de Transferencia</label>
+                            <input type="file" class="form-control" id="comprobante" accept="image/*,.pdf" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="comentarios" class="form-label">Comentarios (opcional)</label>
+                            <textarea class="form-control" id="comentarios" rows="3"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            Enviar Comprobante
+                        </button>
+                    </form>
+                </div>
+
+                <div class="text-center mt-4">
+                    <a href="index.html" class="btn btn-outline-secondary">
+                        <i class="bi bi-house"></i> Volver al Inicio
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadPaymentDetails() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const pagoId = urlParams.get('pago_id');
+                
+                const response = await fetch(`/api/pagos/${pagoId}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('monto').textContent = `$${data.monto.toFixed(2)}`;
+                }
+            } catch (error) {
+                console.error('Error al cargar los detalles:', error);
+            }
+        }
+
+        function copiarTexto(elementId) {
+            const elemento = document.getElementById(elementId);
+            const texto = elemento.textContent;
+            
+            navigator.clipboard.writeText(texto).then(() => {
+                const tooltip = elemento.parentElement.querySelector('.copied-tooltip');
+                tooltip.style.display = 'inline';
+                setTimeout(() => {
+                    tooltip.style.display = 'none';
+                }, 2000);
+            });
+        }
+
+        document.getElementById('comprobante-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('comprobante', document.getElementById('comprobante').files[0]);
+            formData.append('comentarios', document.getElementById('comentarios').value);
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const pagoId = urlParams.get('pago_id');
+            
+            try {
+                const response = await fetch(`/api/pagos/${pagoId}/comprobante`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert('Comprobante enviado correctamente');
+                    window.location.href = `/confirmacion.html?pago_id=${pagoId}`;
+                } else {
+                    const data = await response.json();
+                    alert(data.error || 'Error al enviar el comprobante');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error al enviar el comprobante');
+            }
+        });
+
+        // Cargar detalles al iniciar
+        document.addEventListener('DOMContentLoaded', loadPaymentDetails);
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
