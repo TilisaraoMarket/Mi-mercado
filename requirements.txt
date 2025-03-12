@@ -4,6 +4,8 @@ gunicorn==21.2.0
 Werkzeug==3.0.1
 python-dotenv==1.0.0
 Flask-Cors==4.0.0
+Flask-Static-Digest==0.2.1
+whitenoise==6.5.0
 
 # Dependencias de Flask
 MarkupSafe==2.1.3

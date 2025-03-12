@@ -6,7 +6,9 @@ services:
     startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.11
-      - key: FLASK_ENV
-        value: production
+        value: 3.9
+      - key: PORT
+        value: 10000
     staticPublishPath: ./static
+    healthCheckPath: /
+    autoDeploy: true

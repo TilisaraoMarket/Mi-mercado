@@ -17,6 +17,8 @@ from werkzeug.utils import secure_filename
 from sqlalchemy.orm import validates
 from flask_pymongo import PyMongo
 from dotenv import load_dotenv
+from whitenoise import WhiteNoise
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Configurar logging
 logging.basicConfig(
@@ -50,6 +52,10 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', config['app']['secret_key'])
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = config['database'].get('track_modifications', False)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.getenv('SESSION_LIFETIME_DAYS', config['app']['session_lifetime_days'])))
+app.config['STATIC_FOLDER'] = 'static'
+
+# Configurar ProxyFix para manejar correctamente los headers en producción
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Configurar DATABASE_URL para PostgreSQL en Render
 database_url = os.getenv('DATABASE_URL')
@@ -88,14 +94,19 @@ try:
 except Exception as e:
     logger.error(f"Error al configurar o conectar con MongoDB: {str(e)}")
     # MongoDB no estará disponible, pero la aplicación seguirá funcionando con SQLAlchemy
-# Update static file handling
-app.static_folder = 'static'
-app.static_url_path = '/static'
-
 # Update CORS configuration
 CORS(app, 
      supports_credentials=True,
      resources={r"/*": {"origins": "*"}})
+
+# Configurar WhiteNoise para servir archivos estáticos eficientemente
+app.wsgi_app = WhiteNoise(
+    app.wsgi_app,
+    root=os.path.join(os.path.dirname(__file__), 'static'),
+    prefix='/',
+    index_file=True,
+    autorefresh=True
+)
 
 # Configuración de Stripe
 app.config['STRIPE_PUBLIC_KEY'] = os.getenv('STRIPE_PUBLIC_KEY', 'pk_test_your_key')
@@ -496,16 +507,14 @@ def simple_health_check():
     return 'OK', 200
 
 @app.route('/')
-def root():
-    return 'Mi Mercado API está funcionando!'
+def serve_index():
+    return send_from_directory('static', 'index.html')
 
-@app.route('/<path:filename>')
-def serve_static(filename):
-    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), filename)
-
-@app.route('/producto')
-def producto():
-    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'producto.html')
+@app.route('/<path:path>')
+def catch_all(path):
+    if '.' not in path:  # Si no es un archivo estático
+        return send_from_directory('static', 'index.html')
+    return send_from_directory('static', path)
 
 # Rutas de la API
 @app.route('/api/login', methods=['POST'])
@@ -1637,7 +1646,5 @@ with app.app_context():
 if __name__ == '__main__':
     # Ejecutar el servidor
     port = int(os.environ.get('PORT', 5000))
-    if os.environ.get('FLASK_ENV') == 'development':
-        app.run(host='0.0.0.0', port=port, debug=True)
-    else:
-        app.run(host='0.0.0.0', port=port)
+    debug_mode = os.environ.get('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
