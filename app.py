@@ -139,6 +139,27 @@ class EstadoPago(Enum):
     COMPLETADO = 'completado'
     FALLIDO = 'fallido'
     REEMBOLSADO = 'reembolsado'
+def verificar_usuarios():
+    """Verifica si existen usuarios en el sistema y crea uno por defecto si no hay ninguno."""
+    try:
+        cantidad_usuarios = Usuario.query.count()
+        if cantidad_usuarios == 0:
+            # Crear usuario por defecto
+            usuario_default = Usuario(
+                email='admin@mimercado.com',
+                nombre='Admin',
+                apellido='Sistema',
+                password_hash=generate_password_hash('admin123')
+            )
+            db.session.add(usuario_default)
+            db.session.commit()
+            logger.info("Usuario administrador por defecto creado")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error al verificar usuarios: {str(e)}")
+        return False
+
 # Function to insert payment statuses into MongoDB
 def insert_payment_statuses():
     if mongo is None:
@@ -372,17 +393,20 @@ class DireccionEnvio(db.Model):
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
 
 def crear_productos_ejemplo():
-    # Crear un usuario administrador si no existe
-    if Usuario.query.get(1) is None:
-        usuario_admin = Usuario(
-            id=1,
-            email='admin@example.com',
-            password_hash=generate_password_hash('admin123'),
-            nombre='Admin',
-            apellido='User'
-        )
-        db.session.add(usuario_admin)
-        db.session.commit()
+    # Verificar si existe un usuario administrador
+    admin = Usuario.query.filter_by(email='admin@mimercado.com').first()
+    if not admin:
+        # Si no existe el usuario de verificar_usuarios(), crear uno para los productos
+        admin = Usuario.query.filter_by(email='admin@example.com').first()
+        if not admin:
+            admin = Usuario(
+                email='admin@example.com',
+                password_hash=generate_password_hash('admin123'),
+                nombre='Admin',
+                apellido='User'
+            )
+            db.session.add(admin)
+            db.session.commit()
 
     productos = [
         {
@@ -449,24 +473,15 @@ def recreate_db():
     with app.app_context():
         # Eliminar todas las tablas
         db.drop_all()
-        print("Base de datos eliminada")
+        logger.info("Base de datos eliminada")
         
         # Crear todas las tablas nuevamente
         db.create_all()
-        print("Base de datos recreada")
+        logger.info("Base de datos recreada")
         
-        # Crear usuario administrador
-        if Usuario.query.filter_by(email='admin@example.com').first() is None:
-            admin = Usuario(
-                email='admin@example.com',
-                nombre='Admin',
-                apellido='User',
-                password_hash=generate_password_hash('admin123')
-            )
-            db.session.add(admin)
-            db.session.commit()
-            print("Usuario administrador creado")
-
+        # Verificar y crear usuario inicial si es necesario
+        verificar_usuarios()
+        
         # Crear productos de ejemplo
         crear_productos_ejemplo()
 
@@ -527,6 +542,29 @@ def health_check():
 def simple_health_check():
     return 'OK', 200
 
+@app.route('/api/system/status', methods=['GET'])
+def system_status():
+    try:
+        # Verificar estado de la base de datos
+        usuarios_count = Usuario.query.count()
+        productos_count = Producto.query.count()
+        
+        return jsonify({
+            'status': 'operational',
+            'database': {
+                'usuarios': usuarios_count,
+                'productos': productos_count,
+                'needs_setup': usuarios_count == 0
+            },
+            'message': 'Sistema funcionando correctamente'
+        })
+    except Exception as e:
+        logger.error(f"Error al verificar estado del sistema: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 @app.route('/')
 def serve_index():
     return send_from_directory('static', 'index.html')
@@ -540,67 +578,36 @@ def catch_all(path):
 # Rutas de la API
 @app.route('/api/login', methods=['POST'])
 def login():
-    logger.info("Recibiendo solicitud de login")
+    print("Recibiendo solicitud de login")  # Debug
     data = request.get_json()
     
     if not data:
-        logger.warning("No se recibieron datos en el login")
-        return jsonify({
-            'success': False,
-            'error': 'No se recibieron datos',
-            'code': 'NO_DATA'
-        }), 400
+        print("No se recibieron datos")  # Debug
+        return jsonify({'error': 'No se recibieron datos'}), 400
         
     email = data.get('email')
     password = data.get('password')
 
+    print(f"Intentando login con email: {email}")  # Debug
+
     if not email or not password:
-        logger.warning("Faltan credenciales en la solicitud de login")
-        return jsonify({
-            'success': False,
-            'error': 'Falta email o contraseña',
-            'code': 'MISSING_CREDENTIALS'
-        }), 400
+        print("Falta email o contraseña")  # Debug
+        return jsonify({'error': 'Falta email o contraseña'}), 400
 
     try:
         usuario = Usuario.query.filter_by(email=email).first()
-        
         if usuario and usuario.check_password(password):
-            # Limpiar sesión anterior si existe
-            session.clear()
-            
-            # Crear nueva sesión
             session['user_id'] = usuario.id
-            session['email'] = usuario.email
-            session.permanent = True
-            
-            logger.info(f"Login exitoso para usuario: {email}")
-            
-            return jsonify({
-                'success': True,
-                'message': 'Login exitoso',
-                'user': {
-                    'id': usuario.id,
-                    'email': usuario.email,
-                    'nombre': usuario.nombre,
-                    'apellido': usuario.apellido
-                }
-            })
+            session.permanent = True  # La sesión durará más tiempo
+            print(f"Login exitoso para usuario: {email}")  # Debug
+            return jsonify({'success': True, 'message': 'Login exitoso'})
         
-        logger.warning(f"Intento de login fallido para: {email}")
-        return jsonify({
-            'success': False,
-            'error': 'Credenciales incorrectas',
-            'code': 'INVALID_CREDENTIALS'
-        }), 401
+        print("Credenciales incorrectas")  # Debug
+        return jsonify({'error': 'Credenciales incorrectas'}), 401
         
     except Exception as e:
-        logger.error(f"Error en login: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Error al procesar el login',
-            'code': 'SERVER_ERROR'
-        }), 500
+        print(f"Error en login: {str(e)}")  # Debug
+        return jsonify({'error': 'Error al procesar el login'}), 500
 
 
 @app.route('/api/check-auth')
