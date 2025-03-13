@@ -540,36 +540,67 @@ def catch_all(path):
 # Rutas de la API
 @app.route('/api/login', methods=['POST'])
 def login():
-    print("Recibiendo solicitud de login")  # Debug
+    logger.info("Recibiendo solicitud de login")
     data = request.get_json()
     
     if not data:
-        print("No se recibieron datos")  # Debug
-        return jsonify({'error': 'No se recibieron datos'}), 400
+        logger.warning("No se recibieron datos en el login")
+        return jsonify({
+            'success': False,
+            'error': 'No se recibieron datos',
+            'code': 'NO_DATA'
+        }), 400
         
     email = data.get('email')
     password = data.get('password')
 
-    print(f"Intentando login con email: {email}")  # Debug
-
     if not email or not password:
-        print("Falta email o contraseña")  # Debug
-        return jsonify({'error': 'Falta email o contraseña'}), 400
+        logger.warning("Faltan credenciales en la solicitud de login")
+        return jsonify({
+            'success': False,
+            'error': 'Falta email o contraseña',
+            'code': 'MISSING_CREDENTIALS'
+        }), 400
 
     try:
         usuario = Usuario.query.filter_by(email=email).first()
-        if usuario and usuario.check_password(password):
-            session['user_id'] = usuario.id
-            session.permanent = True  # La sesión durará más tiempo
-            print(f"Login exitoso para usuario: {email}")  # Debug
-            return jsonify({'success': True, 'message': 'Login exitoso'})
         
-        print("Credenciales incorrectas")  # Debug
-        return jsonify({'error': 'Credenciales incorrectas'}), 401
+        if usuario and usuario.check_password(password):
+            # Limpiar sesión anterior si existe
+            session.clear()
+            
+            # Crear nueva sesión
+            session['user_id'] = usuario.id
+            session['email'] = usuario.email
+            session.permanent = True
+            
+            logger.info(f"Login exitoso para usuario: {email}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Login exitoso',
+                'user': {
+                    'id': usuario.id,
+                    'email': usuario.email,
+                    'nombre': usuario.nombre,
+                    'apellido': usuario.apellido
+                }
+            })
+        
+        logger.warning(f"Intento de login fallido para: {email}")
+        return jsonify({
+            'success': False,
+            'error': 'Credenciales incorrectas',
+            'code': 'INVALID_CREDENTIALS'
+        }), 401
         
     except Exception as e:
-        print(f"Error en login: {str(e)}")  # Debug
-        return jsonify({'error': 'Error al procesar el login'}), 500
+        logger.error(f"Error en login: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Error al procesar el login',
+            'code': 'SERVER_ERROR'
+        }), 500
 
 
 @app.route('/api/check-auth')
