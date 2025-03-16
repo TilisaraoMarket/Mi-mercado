@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi Mercado - Iniciar Sesión</title>
+  <style>
+    * {
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+    }
+    body {
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .login-container {
+      background: #fff;
+      padding: 24px;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-title {
+      margin-bottom: 16px;
+      font-size: 20px;
+      text-align: center;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .login-button {
+      width: 100%;
+      background: #3483fa;
+      color: #fff;
+      border: none;
+      padding: 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .login-button:hover {
+      background: #2968c8;
+    }
+    .error-message {
+      color: red;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    .form-selector {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .selector-button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      background: #f5f5f5;
+      cursor: pointer;
+    }
+    .selector-button.active {
+      background: #3483fa;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="form-selector">
+      <button onclick="showLogin()" class="selector-button active" id="loginBtn">Iniciar Sesión</button>
+      <button onclick="showRegister()" class="selector-button" id="registerBtn">Registrarse</button>
+    </div>
+    
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label for="loginEmail">Correo Electrónico</label>
+        <input type="email" id="loginEmail" required />
+      </div>
+      <div class="form-group">
+        <label for="loginPassword">Contraseña</label>
+        <input type="password" id="loginPassword" required />
+      </div>
+      <button type="submit" class="login-button">Acceder</button>
+    </form>
+
+    <form id="registerForm" onsubmit="handleRegister(event)" style="display: none;">
+      <div class="form-group">
+        <label for="registerEmail">Correo Electrónico</label>
+        <input type="email" id="registerEmail" required />
+      </div>
+      <div class="form-group">
+        <label for="registerPassword">Contraseña</label>
+        <input type="password" id="registerPassword" required />
+      </div>
+      <div class="form-group">
+        <label for="confirmPassword">Confirmar Contraseña</label>
+        <input type="password" id="confirmPassword" required />
+      </div>
+      <button type="submit" class="login-button">Registrarse</button>
+    </form>
+
+    <div id="errorContainer" class="error-message" style="display: none;">
+      <!-- Mensajes de error se mostrarán aquí -->
+    </div>
+  </div>
+
+  <script>
+    // Verificar si ya hay una sesión activa
+    async function checkSession() {
+      try {
+        const response = await fetch('/api/check-auth');
+        const data = await response.json();
+        
+        if (data.authenticated) {
+          window.location.href = '/index.html';
+        }
+      } catch (error) {
+        console.error('Error al verificar sesión:', error);
+      }
+    }
+
+    // Ejecutar al cargar la página
+    document.addEventListener('DOMContentLoaded', checkSession);
+
+    function showLogin() {
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('registerForm').style.display = 'none';
+      document.getElementById('loginBtn').classList.add('active');
+      document.getElementById('registerBtn').classList.remove('active');
+      document.getElementById('errorContainer').style.display = 'none';
+    }
+
+    function showRegister() {
+      document.getElementById('loginForm').style.display = 'none';
+      document.getElementById('registerForm').style.display = 'block';
+      document.getElementById('loginBtn').classList.remove('active');
+      document.getElementById('registerBtn').classList.add('active');
+      document.getElementById('errorContainer').style.display = 'none';
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
+      const errorContainer = document.getElementById('errorContainer');
+
+      try {
+        console.log('Intentando login con:', email);  
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email, password }),
+          credentials: 'include'
+        });
+
+        console.log('Respuesta del servidor:', response.status);  
+        const data = await response.json();
+        console.log('Datos de respuesta:', data);  
+
+        if (response.ok && data.success) {
+          console.log('Login exitoso, redirigiendo...');  
+          window.location.href = '/index.html';
+        } else {
+          errorContainer.style.display = 'block';
+          errorContainer.style.color = 'red';
+          errorContainer.textContent = data.error || 'Error al iniciar sesión';
+        }
+      } catch (error) {
+        console.error('Error en login:', error);  
+        errorContainer.style.display = 'block';
+        errorContainer.style.color = 'red';
+        errorContainer.textContent = 'Error de conexión. Intente nuevamente.';
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      const email = document.getElementById('registerEmail').value.trim();
+      const password = document.getElementById('registerPassword').value.trim();
+      const confirmPassword = document.getElementById('confirmPassword').value.trim();
+      const errorContainer = document.getElementById('errorContainer');
+
+      if (password !== confirmPassword) {
+        errorContainer.style.display = 'block';
+        errorContainer.style.color = 'red';
+        errorContainer.textContent = 'Las contraseñas no coinciden';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/registro', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email, password }),
+          credentials: 'include' 
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          errorContainer.style.display = 'block';
+          errorContainer.style.color = 'green';
+          errorContainer.textContent = 'Registro exitoso. Ya puedes iniciar sesión.';
+          document.getElementById('registerForm').reset();
+          setTimeout(() => {
+            showLogin();
+            errorContainer.style.display = 'none';
+          }, 2000);
+        } else {
+          errorContainer.style.display = 'block';
+          errorContainer.style.color = 'red';
+          errorContainer.textContent = data.error || 'Error al registrarse';
+        }
+      } catch (error) {
+        console.error('Error en registro:', error);
+        errorContainer.style.display = 'block';
+        errorContainer.style.color = 'red';
+        errorContainer.textContent = 'Error de conexión. Intente nuevamente.';
+      }
+    }
+  </script>
+</body>
+</html>

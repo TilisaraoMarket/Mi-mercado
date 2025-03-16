@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Perfil - Mi Mercado</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+        }
+
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .password-section {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        .error-message {
+            color: #dc3545;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .success-message {
+            color: #28a745;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .back-button {
+            background-color: #6c757d;
+            margin-right: 10px;
+        }
+
+        .back-button:hover {
+            background-color: #5a6268;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Mi Perfil</h1>
+        
+        <!-- Formulario de Información Personal -->
+        <form id="profileForm" onsubmit="updateProfile(event)">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" readonly>
+            </div>
+            
+            <div class="form-group">
+                <label for="nombre">Nombre</label>
+                <input type="text" id="nombre" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="apellido">Apellido</label>
+                <input type="text" id="apellido" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="telefono">Teléfono</label>
+                <input type="tel" id="telefono">
+            </div>
+            
+            <div class="form-group">
+                <label for="direccion">Dirección</label>
+                <input type="text" id="direccion">
+            </div>
+            
+            <div class="form-group">
+                <label for="ciudad">Ciudad</label>
+                <input type="text" id="ciudad">
+            </div>
+            
+            <div class="form-group">
+                <label for="codigo_postal">Código Postal</label>
+                <input type="text" id="codigo_postal">
+            </div>
+            
+            <button type="button" class="back-button" onclick="window.location.href='/'">Volver</button>
+            <button type="submit">Guardar Cambios</button>
+        </form>
+        
+        <!-- Sección de Cambio de Contraseña -->
+        <div class="password-section">
+            <h2>Cambiar Contraseña</h2>
+            <form id="passwordForm" onsubmit="changePassword(event)">
+                <div class="form-group">
+                    <label for="password_actual">Contraseña Actual</label>
+                    <input type="password" id="password_actual" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password_nuevo">Nueva Contraseña</label>
+                    <input type="password" id="password_nuevo" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password_confirmar">Confirmar Nueva Contraseña</label>
+                    <input type="password" id="password_confirmar" required>
+                </div>
+                
+                <button type="submit">Cambiar Contraseña</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Cargar datos del perfil
+        async function loadProfile() {
+            try {
+                const response = await fetch('/api/perfil');
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error('Error al cargar perfil');
+                }
+                
+                const data = await response.json();
+                
+                // Llenar el formulario con los datos
+                document.getElementById('email').value = data.email || '';
+                document.getElementById('nombre').value = data.nombre || '';
+                document.getElementById('apellido').value = data.apellido || '';
+                document.getElementById('telefono').value = data.telefono || '';
+                document.getElementById('direccion').value = data.direccion || '';
+                document.getElementById('ciudad').value = data.ciudad || '';
+                document.getElementById('codigo_postal').value = data.codigo_postal || '';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error al cargar los datos del perfil');
+            }
+        }
+
+        // Actualizar perfil
+        async function updateProfile(event) {
+            event.preventDefault();
+            
+            try {
+                const response = await fetch('/api/perfil', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        nombre: document.getElementById('nombre').value,
+                        apellido: document.getElementById('apellido').value,
+                        telefono: document.getElementById('telefono').value,
+                        direccion: document.getElementById('direccion').value,
+                        ciudad: document.getElementById('ciudad').value,
+                        codigo_postal: document.getElementById('codigo_postal').value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Perfil actualizado exitosamente');
+                } else {
+                    throw new Error(data.error || 'Error al actualizar perfil');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert(error.message);
+            }
+        }
+
+        // Cambiar contraseña
+        async function changePassword(event) {
+            event.preventDefault();
+            
+            const password_nuevo = document.getElementById('password_nuevo').value;
+            const password_confirmar = document.getElementById('password_confirmar').value;
+            
+            if (password_nuevo !== password_confirmar) {
+                alert('Las contraseñas no coinciden');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/cambiar-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        password_actual: document.getElementById('password_actual').value,
+                        password_nuevo: password_nuevo
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Contraseña actualizada exitosamente');
+                    document.getElementById('passwordForm').reset();
+                } else {
+                    throw new Error(data.error || 'Error al cambiar contraseña');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert(error.message);
+            }
+        }
+
+        // Cargar perfil al iniciar la página
+        document.addEventListener('DOMContentLoaded', loadProfile);
+    </script>
+</body>
+</html>
