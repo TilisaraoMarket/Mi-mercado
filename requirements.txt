@@ -20,7 +20,6 @@ SQLAlchemy==2.0.20
 # MongoDB
 pymongo==4.6.1
 Flask-PyMongo==2.3.0
-dnspython==2.3.0
 
 # PostgreSQL
 psycopg2-binary==2.9.9

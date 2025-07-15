@@ -55,16 +55,14 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.getenv('SESSION
 app.config['STATIC_FOLDER'] = 'static'
 
 # Configuración de seguridad para sesiones
-is_development = os.getenv('FLASK_ENV') == 'development'
 app.config.update(
-    SESSION_COOKIE_SECURE=not is_development,
+    SESSION_COOKIE_SECURE=os.getenv('FLASK_ENV') != 'development',
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='None' if not is_development else None,
-    REMEMBER_COOKIE_SECURE=not is_development,
+    SESSION_COOKIE_SAMESITE='None' if os.getenv('FLASK_ENV') != 'development' else None,
+    REMEMBER_COOKIE_SECURE=os.getenv('FLASK_ENV') != 'development',
     REMEMBER_COOKIE_HTTPONLY=True,
-    REMEMBER_COOKIE_SAMESITE='None' if not is_development else None
+    REMEMBER_COOKIE_SAMESITE='None' if os.getenv('FLASK_ENV') != 'development' else None
 )
-logger.info(f"Configuración de cookies en modo {'desarrollo' if is_development else 'producción'}")
 
 # Configurar ProxyFix para manejar correctamente los headers en producción
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -90,20 +88,11 @@ try:
         logger.warning("MONGODB_URI no está configurado. Usando URI por defecto.")
         mongodb_uri = 'mongodb://localhost:27017/mimercado'
     
-    # Verificar si estamos en producción y usando MongoDB local
-    if not is_development and mongodb_uri.startswith('mongodb://localhost'):
-        logger.critical("ADVERTENCIA: Estás en producción y usando MongoDB local. Esto puede causar problemas de conectividad.")
-    
     # Validar formato de URI de MongoDB
     if not (mongodb_uri.startswith('mongodb://') or mongodb_uri.startswith('mongodb+srv://')):
         raise ValueError("Formato de URI de MongoDB inválido. Debe comenzar con 'mongodb://' o 'mongodb+srv://'")
     
-    # Ocultar credenciales en logs
-    safe_uri = mongodb_uri
-    if '@' in mongodb_uri:
-        safe_uri = mongodb_uri.split('@')[0].split('://')[0] + '://' + '***:***@' + mongodb_uri.split('@')[1]
-    logger.info(f"Configurando MongoDB con URI: {safe_uri}")
-    
+    logger.info(f"Configurando MongoDB con URI: {mongodb_uri.split('@')[-1]}")  # Log solo la parte después de @ por seguridad
     app.config["MONGO_URI"] = mongodb_uri
     
     # Inicializar MongoDB
@@ -114,8 +103,6 @@ try:
     logger.info(f"Conexión a MongoDB establecida correctamente. Base de datos: {mongo.db.name}")
 except Exception as e:
     logger.error(f"Error al configurar o conectar con MongoDB: {str(e)}")
-    if not is_development:
-        logger.critical("MongoDB no está disponible en producción. Verifica la configuración y conectividad.")
     # MongoDB no estará disponible, pero la aplicación seguirá funcionando con SQLAlchemy
 # Configuración de CORS actualizada
 CORS(app, 
@@ -229,23 +216,10 @@ def test_mongodb():
     try:
         if mongo is None:
             logger.error("La conexión a MongoDB no está disponible")
-            # Obtener información sobre la configuración para diagnóstico
-            mongodb_uri = os.environ.get('MONGODB_URI', config['database'].get('mongo_uri', 'No configurado'))
-            safe_uri = "No configurado"
-            if mongodb_uri != "No configurado":
-                if '@' in mongodb_uri:
-                    safe_uri = mongodb_uri.split('@')[0].split('://')[0] + '://' + '***:***@' + mongodb_uri.split('@')[1]
-                else:
-                    safe_uri = mongodb_uri
-            
             return jsonify({
                 "status": "error",
                 "message": "La conexión a MongoDB no está disponible",
-                "details": "MongoDB no está configurado o no se pudo establecer la conexión",
-                "config": {
-                    "uri_configured": safe_uri != "No configurado",
-                    "environment": "production" if not is_development else "development"
-                }
+                "details": "MongoDB no está configurado o no se pudo establecer la conexión"
             }), 500
             
         # Intenta una operación simple
@@ -267,16 +241,14 @@ def test_mongodb():
                 "collections": db_stats.get('collections', 0),
                 "objects": db_stats.get('objects', 0),
                 "dataSize": db_stats.get('dataSize', 0)
-            },
-            "environment": "production" if not is_development else "development"
+            }
         })
     except Exception as e:
         logger.error(f"Error al probar la conexión a MongoDB: {str(e)}")
         return jsonify({
             "status": "error", 
             "message": "Error al conectar con MongoDB",
-            "details": str(e),
-            "environment": "production" if not is_development else "development"
+            "details": str(e)
         }), 500
 
 class MetodoPago(Enum):
@@ -499,11 +471,9 @@ def crear_productos_ejemplo():
 
 def recreate_db():
     with app.app_context():
-        # Verificar si las tablas existen antes de eliminarlas
-        if db.engine.dialect.has_table(db.engine, 'usuario'):
-            # Eliminar todas las tablas
-            db.drop_all()
-            logger.info("Base de datos eliminada")
+        # Eliminar todas las tablas
+        db.drop_all()
+        logger.info("Base de datos eliminada")
         
         # Crear todas las tablas nuevamente
         db.create_all()
@@ -515,12 +485,8 @@ def recreate_db():
         # Crear productos de ejemplo
         crear_productos_ejemplo()
 
-# Recrear la base de datos solo en desarrollo
-if os.getenv('FLASK_ENV') == 'development':
-    recreate_db()
-    logger.info("Base de datos recreada en modo desarrollo")
-else:
-    logger.info("Modo producción: no se recrea la base de datos")
+# Recrear la base de datos al arrancar
+recreate_db()
 
 # Rutas para servir archivos estáticos
 @app.route('/api/health')
@@ -533,44 +499,23 @@ def health_check():
     if mongo is not None:
         try:
             mongo.db.command('ping')
-            collections = mongo.db.list_collection_names()
             mongo_details = {
                 "database_name": mongo.db.name,
-                "collections": len(collections),
-                "collection_names": collections,
-                "uri_configured": bool(os.environ.get('MONGODB_URI') or config['database'].get('mongo_uri'))
+                "collections": len(mongo.db.list_collection_names())
             }
         except Exception as e:
             mongo_status = "error"
-            mongo_details = {
-                "error": str(e),
-                "uri_configured": bool(os.environ.get('MONGODB_URI') or config['database'].get('mongo_uri'))
-            }
+            mongo_details = {"error": str(e)}
             logger.error(f"Error de conexión a MongoDB en health check: {str(e)}")
     else:
         mongo_status = "unavailable"
-        mongo_details = {
-            "reason": "MongoDB no está configurado o no se pudo establecer la conexión inicial",
-            "uri_configured": bool(os.environ.get('MONGODB_URI') or config['database'].get('mongo_uri'))
-        }
+        mongo_details = {"reason": "MongoDB no está configurado o no se pudo establecer la conexión inicial"}
     
     # Verificar estado de SQL
-    sql_details = {}
     try:
         db.session.execute("SELECT 1")
-        # Obtener información adicional sobre la base de datos SQL
-        try:
-            usuarios_count = Usuario.query.count()
-            productos_count = Producto.query.count()
-            sql_details = {
-                "usuarios": usuarios_count,
-                "productos": productos_count
-            }
-        except Exception as e:
-            sql_details = {"error_details": str(e)}
     except Exception as e:
         db_status = "error"
-        sql_details = {"error": str(e)}
         logger.error(f"Error de conexión a SQL en health check: {str(e)}")
     
     # Determinar el estado general de la aplicación
@@ -580,12 +525,10 @@ def health_check():
         'status': overall_status,
         'message': 'Mi Mercado API is running' if overall_status == "healthy" else "Mi Mercado API is running with limited functionality",
         'timestamp': datetime.now().isoformat(),
-        'environment': "production" if not is_development else "development",
         'databases': {
             'sql': {
                 'status': db_status,
-                'required': True,
-                'details': sql_details
+                'required': True
             },
             'mongodb': {
                 'status': mongo_status,
@@ -633,48 +576,6 @@ def catch_all(path):
     return send_from_directory('static', path)
 
 # Rutas de la API
-@app.route('/api/register', methods=['POST'])
-def register():
-    print("Recibiendo solicitud de registro")  # Debug
-    data = request.get_json()
-    if not data:
-        print("No se recibieron datos")  # Debug
-        return jsonify({'error': 'No se recibieron datos'}), 400
-
-    email = data.get('email')
-    password = data.get('password')
-    nombre = data.get('nombre')
-    apellido = data.get('apellido')
-    print(f"Intentando registrar con email: {email}")  # Debug
-
-    # Verificar que se hayan enviado todos los datos requeridos
-    if not email or not password or not nombre or not apellido:
-        print("Faltan datos requeridos")  # Debug
-        return jsonify({'error': 'Faltan datos requeridos'}), 400
-
-    try:
-        # Comprobar si el email ya existe
-        if Usuario.query.filter_by(email=email).first():
-            print("El email ya está registrado")  # Debug
-            return jsonify({'error': 'El email ya está registrado'}), 400
-
-        # Crear nuevo usuario y guardar en la base de datos
-        nuevo_usuario = Usuario(
-            email=email,
-            nombre=nombre,
-            apellido=apellido,
-            password_hash=generate_password_hash(password)
-        )
-        db.session.add(nuevo_usuario)
-        db.session.commit()
-        print(f"Usuario registrado exitosamente: {email}")  # Debug
-        return jsonify({'success': True, 'message': 'Registro exitoso'}), 201
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"Error en registro: {str(e)}")  # Debug
-        return jsonify({'error': 'Error al procesar el registro'}), 500
-
 @app.route('/api/login', methods=['POST'])
 def login():
     print("Recibiendo solicitud de login")  # Debug
@@ -1794,32 +1695,12 @@ with app.app_context():
             # Listar colecciones disponibles
             collections = mongo.db.list_collection_names()
             logger.info(f"Colecciones disponibles en MongoDB: {collections}")
-            
-            # Verificar índices y otras configuraciones importantes
-            if 'estados_pago' in collections:
-                logger.info("Colección estados_pago verificada correctamente")
-            else:
-                logger.warning("La colección estados_pago no existe. Se creará al insertar los estados.")
-                
         except Exception as e:
             logger.error(f"Error de inicialización de MongoDB: {str(e)}")
             # Marcar MongoDB como no disponible si hay error durante la inicialización
             mongo = None
-            
-            # Notificación más detallada en producción
-            if not is_development:
-                logger.critical(
-                    "MongoDB no está disponible en producción. Algunas funcionalidades estarán limitadas. "
-                    "Verifica la configuración de MONGODB_URI y la conectividad con el servidor."
-                )
     else:
-        if is_development:
-            logger.warning("MongoDB no está disponible. La aplicación funcionará con funcionalidad limitada.")
-        else:
-            logger.critical(
-                "MongoDB no está disponible en producción. Esto puede afectar seriamente la funcionalidad. "
-                "Verifica la configuración de MONGODB_URI y la conectividad con el servidor."
-            )
+        logger.warning("MongoDB no está disponible. La aplicación funcionará con funcionalidad limitada.")
 
 if __name__ == '__main__':
     # Ejecutar el servidor
