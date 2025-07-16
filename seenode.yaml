@@ -11,14 +11,21 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
     ports:
-      - 80
+      - "80:80"
 
   database:
     type: postgresql
     version: 15
 
 variables:
-  DATABASE_URL: ""
+  DATABASE_URL: postgresql://techtrove_user:techtrove_password@localhost:5432/techtrove_db
+  SECRET_KEY: b7f8e2c1-4a6d-4e2a-9c3b-8f7d2e1a5c9f
+  MONGODB_URI: mongodb://usuario:contraseña@host:puerto/basededatos
+  STRIPE_API_KEY: sk_test_...
+  STRIPE_SECRET_KEY: sk_test_...
+  STRIPE_PUBLIC_KEY: pk_test_...
+  SESSION_LIFETIME_DAYS: 7
+  PORT: 80
 
 build:
   dockerfile: Dockerfile

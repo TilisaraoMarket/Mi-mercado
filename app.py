@@ -43,25 +43,25 @@ except FileNotFoundError:
         'database': {
             'uri': os.getenv('DATABASE_URL', 'sqlite:///app.db'),
             'track_modifications': False,
-            'mongo_uri': os.getenv('MONGODB_URI', 'mongodb://localhost:27017/mimercado')
-        }
-    }
-
 # Configuración de la aplicación
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', config['app']['secret_key'])
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = config['database'].get('track_modifications', False)
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.getenv('SESSION_LIFETIME_DAYS', config['app']['session_lifetime_days'])))
+CORS(app)
+
+# Configuración de la base de datos
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///market.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 app.config['STATIC_FOLDER'] = 'static'
 
 # Configuración de seguridad para sesiones
 app.config.update(
-    SESSION_COOKIE_SECURE=os.getenv('FLASK_ENV') != 'development',
+    SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='None' if os.getenv('FLASK_ENV') != 'development' else None,
-    REMEMBER_COOKIE_SECURE=os.getenv('FLASK_ENV') != 'development',
+    SESSION_COOKIE_SAMESITE='Lax',
+    REMEMBER_COOKIE_SECURE=True,
     REMEMBER_COOKIE_HTTPONLY=True,
-    REMEMBER_COOKIE_SAMESITE='None' if os.getenv('FLASK_ENV') != 'development' else None
+    REMEMBER_COOKIE_SAMESITE='Lax'
 )
 
 # Configurar ProxyFix para manejar correctamente los headers en producción
@@ -1703,7 +1703,7 @@ with app.app_context():
         logger.warning("MongoDB no está disponible. La aplicación funcionará con funcionalidad limitada.")
 
 if __name__ == '__main__':
-    # Ejecutar el servidor
-    port = int(os.environ.get('PORT', 5000))
-    debug_mode = os.environ.get('FLASK_ENV') == 'development'
-    app.run(host='0.0.0.0', port=port, debug=debug_mode)
+    # Obtener el puerto desde las variables de entorno
+    port = int(os.environ.get('PORT', 80))
+    # Ejecutar la aplicación
+    app.run(host='0.0.0.0', port=port)

@@ -23,8 +23,12 @@ This guide provides instructions for deploying the TechTrove application on Seen
 ## Environment Variables
 
 The application requires the following environment variables:
-- DATABASE_URL: PostgreSQL connection string
-- STRIPE_SECRET_KEY: Stripe API key for payments
+- DATABASE_URL: postgresql://techtrove_user:techtrove_password@localhost:5432/techtrove_db
+- PORT: 80
+- SECRET_KEY: (dejar vacío)
+- SESSION_LIFETIME_DAYS: 7
+- stripe_secret_key: (dejar vacío)
+- STRIPE_PUBLIC_KEY: (dejar vacío)
 
 ## Database Setup
 

@@ -9,6 +9,8 @@ services:
         value: 3.9
       - key: PORT
         value: 10000
+      - key: DATABASE_URL
+        value: postgresql://techtrove_user:techtrove_password@localhost:5432/techtrove_db
     staticPublishPath: ./static
     healthCheckPath: /
     autoDeploy: true

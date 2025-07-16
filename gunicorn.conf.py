@@ -1,12 +1,13 @@
-import multiprocessing
+import os
 
 # Configuración de workers
-workers = 2
+workers = 1
 threads = 2
 worker_class = 'sync'
 
 # Configuración de timeout
-timeout = 30
+timeout = 300
+graceful_timeout = 300
 
 # Configuración de binding
 bind = "0.0.0.0:80"
@@ -14,8 +15,8 @@ bind = "0.0.0.0:80"
 # Configuración de logging
 accesslog = '-'
 errorlog = '-'
-loglevel = 'info'
+loglevel = 'debug'
 
-# Configuración de worker timeout
-graceful_timeout = 30
+# Configuración de keepalive
+keepalive = 10
 keepalive = 5
