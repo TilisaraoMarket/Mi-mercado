@@ -1,6 +1,5 @@
 name: techtrove
 version: 1.0.0
-description: A tech marketplace application
 
 services:
   web:
@@ -12,13 +11,11 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
     ports:
-      - 8080
+      - 80
 
   database:
     type: postgresql
     version: 15
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
 
 variables:
   DATABASE_URL: ""
