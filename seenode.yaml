@@ -1,0 +1,33 @@
+name: techtrove
+version: 1.0.0
+description: A tech marketplace application
+
+services:
+  web:
+    runtime: python
+    build:
+      command: pip install -r requirements.txt
+    start:
+      command: gunicorn -c gunicorn.conf.py app:app
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    ports:
+      - 8080
+
+  database:
+    type: postgresql
+    version: 15
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+
+variables:
+  DATABASE_URL: ""
+
+build:
+  dockerfile: Dockerfile
+  context: .
+
+secrets:
+  stripe_secret_key:
+    description: Stripe secret key for payments
+    required: true
